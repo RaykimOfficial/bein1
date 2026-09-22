@@ -1,1 +1,352 @@
 
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Canlı Yayın</title>
+
+  <script src="hls.min.js"></script>
+
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+    }
+
+    #wrapper {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      background: #000;
+    }
+
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #000;
+    }
+
+    #status {
+      position: absolute;
+      top: 18px;
+      left: 18px;
+      z-index: 1000;
+
+      max-width: 500px;
+      padding: 12px 16px;
+
+      color: white;
+      background: rgba(0, 0, 0, 0.82);
+
+      border-radius: 8px;
+
+      font-size: 15px;
+      line-height: 1.4;
+
+      white-space: pre-wrap;
+
+      transition: opacity 0.25s ease;
+    }
+
+    #status.success {
+      background: rgba(0, 120, 40, 0.9);
+    }
+
+    #status.error {
+      background: rgba(170, 0, 0, 0.95);
+    }
+
+    #status.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+  </style>
+</head>
+
+<body>
+
+<div id="wrapper">
+
+  <div id="status">
+    Yayın hazırlanıyor...
+  </div>
+
+  <video
+    id="video"
+    controls
+    autoplay
+    muted
+    playsinline
+  ></video>
+
+</div>
+
+<script>
+  const video = document.getElementById("video");
+  const statusBox = document.getElementById("status");
+
+  // Discord Activity proxy yolu
+  const streamUrl = "/tv/224163";
+
+  let yayinBasladi = false;
+  let hideTimer = null;
+
+
+  function showStatus(message, type = "", force = false) {
+
+    if (yayinBasladi && !force && type !== "error") {
+      return;
+    }
+
+    clearTimeout(hideTimer);
+
+    statusBox.textContent = message;
+    statusBox.className = type;
+    statusBox.style.opacity = "1";
+
+    console.log(message);
+  }
+
+
+  function hideStatus(delay = 1200) {
+
+    clearTimeout(hideTimer);
+
+    hideTimer = setTimeout(() => {
+      statusBox.classList.add("hidden");
+    }, delay);
+  }
+
+
+  async function playVideo() {
+
+    try {
+
+      await video.play();
+
+    } catch (error) {
+
+      console.error("PLAY ERROR:", error);
+
+      showStatus(
+        "Video yüklendi fakat oynatma başlatılamadı.\nPlay tuşuna bas.",
+        "error",
+        true
+      );
+    }
+  }
+
+
+  function startHls() {
+
+    if (typeof Hls === "undefined") {
+
+      showStatus(
+        "HLS.js yüklenemedi.",
+        "error",
+        true
+      );
+
+      return;
+    }
+
+
+    if (!Hls.isSupported()) {
+
+      if (
+        video.canPlayType(
+          "application/vnd.apple.mpegurl"
+        )
+      ) {
+
+        video.src = streamUrl;
+
+        video.addEventListener(
+          "loadedmetadata",
+          playVideo,
+          { once: true }
+        );
+
+        return;
+      }
+
+      showStatus(
+        "Bu ortam HLS desteklemiyor.",
+        "error",
+        true
+      );
+
+      return;
+    }
+
+
+    const hls = new Hls({
+      enableWorker: true,
+      lowLatencyMode: true,
+      backBufferLength: 30
+    });
+
+    window.hls = hls;
+
+
+    showStatus(
+      "Yayına bağlanılıyor..."
+    );
+
+
+    hls.on(
+      Hls.Events.MEDIA_ATTACHED,
+      function () {
+
+        showStatus(
+          "Yayın listesi yükleniyor..."
+        );
+
+        hls.loadSource(streamUrl);
+
+      }
+    );
+
+
+    hls.on(
+      Hls.Events.MANIFEST_PARSED,
+      function () {
+
+        showStatus(
+          "Yayın bulundu. Başlatılıyor...",
+          "success"
+        );
+
+        playVideo();
+
+      }
+    );
+
+
+    hls.on(
+      Hls.Events.ERROR,
+      function (event, data) {
+
+        console.error(
+          "HLS ERROR:",
+          data
+        );
+
+
+        let message =
+          "Yayın hatası\n\n" +
+          "Detay: " +
+          data.details;
+
+
+        if (data.response?.code) {
+          message +=
+            "\nHTTP: " +
+            data.response.code;
+        }
+
+
+        if (data.response?.url) {
+          message +=
+            "\nURL: " +
+            data.response.url;
+        }
+
+
+        showStatus(
+          message,
+          "error",
+          true
+        );
+
+
+        if (data.fatal) {
+
+          if (
+            data.type ===
+            Hls.ErrorTypes.NETWORK_ERROR
+          ) {
+
+            setTimeout(() => {
+              hls.startLoad();
+            }, 2000);
+
+          }
+
+          else if (
+            data.type ===
+            Hls.ErrorTypes.MEDIA_ERROR
+          ) {
+
+            hls.recoverMediaError();
+
+          }
+
+          else {
+
+            hls.destroy();
+
+          }
+        }
+
+      }
+    );
+
+
+    hls.attachMedia(video);
+
+  }
+
+
+  video.addEventListener(
+    "playing",
+    function () {
+
+      yayinBasladi = true;
+
+      showStatus(
+        "Canlı yayın oynuyor.",
+        "success",
+        true
+      );
+
+      hideStatus(1200);
+
+    }
+  );
+
+
+  video.addEventListener(
+    "error",
+    function () {
+
+      if (!video.error) {
+        return;
+      }
+
+      showStatus(
+        "Video hatası\n\nKod: " +
+        video.error.code +
+        "\nMesaj: " +
+        video.error.message,
+        "error",
+        true
+      );
+
+    }
+  );
+
+
+  startHls();
+
+</script>
+
+</body>
+</html>
