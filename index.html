@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="tr">
 <head>
@@ -39,18 +38,20 @@
       left: 18px;
       z-index: 1000;
 
-      max-width: 500px;
+      max-width: 600px;
+
       padding: 12px 16px;
 
       color: white;
-      background: rgba(0, 0, 0, 0.82);
+      background: rgba(0, 0, 0, 0.85);
 
       border-radius: 8px;
 
       font-size: 15px;
-      line-height: 1.4;
+      line-height: 1.5;
 
       white-space: pre-wrap;
+      word-break: break-word;
 
       transition: opacity 0.25s ease;
     }
@@ -92,8 +93,16 @@
   const video = document.getElementById("video");
   const statusBox = document.getElementById("status");
 
-  // Discord Activity proxy yolu
-  const streamUrl = "/tv/224163";
+  /*
+    Discord URL Mapping:
+
+    /tv
+    ->
+    fixtv123.xyz:2095
+  */
+
+  const streamUrl =
+    "/tv/gkhn1691/gkh0302yy00/224163";
 
   let yayinBasladi = false;
   let hideTimer = null;
@@ -101,7 +110,11 @@
 
   function showStatus(message, type = "", force = false) {
 
-    if (yayinBasladi && !force && type !== "error") {
+    if (
+      yayinBasladi &&
+      !force &&
+      type !== "error"
+    ) {
       return;
     }
 
@@ -109,9 +122,8 @@
 
     statusBox.textContent = message;
     statusBox.className = type;
-    statusBox.style.opacity = "1";
 
-    console.log(message);
+    console.log("[STATUS]", message);
   }
 
 
@@ -133,18 +145,24 @@
 
     } catch (error) {
 
-      console.error("PLAY ERROR:", error);
+      console.error(
+        "PLAY ERROR:",
+        error
+      );
 
       showStatus(
-        "Video yüklendi fakat oynatma başlatılamadı.\nPlay tuşuna bas.",
+        "Video yüklendi fakat oynatma başlatılamadı.\n\n" +
+        error.message,
         "error",
         true
       );
+
     }
+
   }
 
 
-  function startHls() {
+  function startPlayer() {
 
     if (typeof Hls === "undefined") {
 
@@ -177,6 +195,7 @@
         return;
       }
 
+
       showStatus(
         "Bu ortam HLS desteklemiyor.",
         "error",
@@ -193,11 +212,12 @@
       backBufferLength: 30
     });
 
+
     window.hls = hls;
 
 
     showStatus(
-      "Yayına bağlanılıyor..."
+      "Yayın sunucusuna bağlanılıyor..."
     );
 
 
@@ -206,10 +226,37 @@
       function () {
 
         showStatus(
+          "Video hazır.\nYayın listesi isteniyor..."
+        );
+
+        hls.loadSource(
+          streamUrl
+        );
+
+      }
+    );
+
+
+    hls.on(
+      Hls.Events.MANIFEST_LOADING,
+      function () {
+
+        showStatus(
           "Yayın listesi yükleniyor..."
         );
 
-        hls.loadSource(streamUrl);
+      }
+    );
+
+
+    hls.on(
+      Hls.Events.MANIFEST_LOADED,
+      function (event, data) {
+
+        console.log(
+          "MANIFEST LOADED:",
+          data
+        );
 
       }
     );
@@ -220,11 +267,37 @@
       function () {
 
         showStatus(
-          "Yayın bulundu. Başlatılıyor...",
+          "Yayın bulundu.\nVideo başlatılıyor...",
           "success"
         );
 
         playVideo();
+
+      }
+    );
+
+
+    hls.on(
+      Hls.Events.FRAG_LOADING,
+      function (event, data) {
+
+        console.log(
+          "SEGMENT İSTENİYOR:",
+          data.frag?.url
+        );
+
+      }
+    );
+
+
+    hls.on(
+      Hls.Events.FRAG_LOADED,
+      function (event, data) {
+
+        console.log(
+          "SEGMENT GELDİ:",
+          data.frag?.url
+        );
 
       }
     );
@@ -241,9 +314,21 @@
 
 
         let message =
-          "Yayın hatası\n\n" +
-          "Detay: " +
-          data.details;
+          "Yayın hatası\n\n";
+
+
+        if (data.details) {
+          message +=
+            "Detay: " +
+            data.details;
+        }
+
+
+        if (data.type) {
+          message +=
+            "\nTür: " +
+            data.type;
+        }
 
 
         if (data.response?.code) {
@@ -260,6 +345,13 @@
         }
 
 
+        if (data.frag?.url) {
+          message +=
+            "\nSegment: " +
+            data.frag.url;
+        }
+
+
         showStatus(
           message,
           "error",
@@ -267,33 +359,35 @@
         );
 
 
-        if (data.fatal) {
+        if (!data.fatal) {
+          return;
+        }
 
-          if (
-            data.type ===
-            Hls.ErrorTypes.NETWORK_ERROR
-          ) {
 
-            setTimeout(() => {
-              hls.startLoad();
-            }, 2000);
+        if (
+          data.type ===
+          Hls.ErrorTypes.NETWORK_ERROR
+        ) {
 
-          }
+          setTimeout(() => {
+            hls.startLoad();
+          }, 2000);
 
-          else if (
-            data.type ===
-            Hls.ErrorTypes.MEDIA_ERROR
-          ) {
+        }
 
-            hls.recoverMediaError();
+        else if (
+          data.type ===
+          Hls.ErrorTypes.MEDIA_ERROR
+        ) {
 
-          }
+          hls.recoverMediaError();
 
-          else {
+        }
 
-            hls.destroy();
+        else {
 
-          }
+          hls.destroy();
+
         }
 
       }
@@ -331,8 +425,10 @@
         return;
       }
 
+
       showStatus(
-        "Video hatası\n\nKod: " +
+        "Video hatası\n\n" +
+        "Kod: " +
         video.error.code +
         "\nMesaj: " +
         video.error.message,
@@ -344,7 +440,7 @@
   );
 
 
-  startHls();
+  startPlayer();
 
 </script>
 
