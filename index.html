@@ -6,10 +6,11 @@
 
   <title>Canlı Yayın</title>
 
-  <script src="hls.min.js"></script>
+  <script src="mpegts.js"></script>
 
   <style>
-    html, body {
+    html,
+    body {
       margin: 0;
       width: 100%;
       height: 100%;
@@ -50,7 +51,6 @@
       line-height: 1.5;
 
       white-space: pre-wrap;
-      word-break: break-word;
 
       transition: opacity 0.25s ease;
     }
@@ -92,7 +92,6 @@
   const video = document.getElementById("video");
   const statusBox = document.getElementById("status");
 
-  // Cloudflare Worker üzerinden HTTPS yayın
   const streamUrl =
     "https://bein1.raykimofficial.workers.dev/224163";
 
@@ -114,13 +113,12 @@
 
     statusBox.textContent = message;
     statusBox.className = type;
-    statusBox.style.opacity = "1";
 
-    console.log("[STATUS]", message);
+    console.log(message);
   }
 
 
-  function hideStatus(delay = 1200) {
+  function hideStatus(delay = 1500) {
 
     clearTimeout(hideTimer);
 
@@ -138,14 +136,10 @@
 
     } catch (error) {
 
-      console.error(
-        "PLAY ERROR:",
-        error
-      );
+      console.error(error);
 
       showStatus(
-        "Video yüklendi fakat oynatma başlatılamadı.\n\n" +
-        error.message,
+        "Yayın yüklendi fakat otomatik oynatma başlatılamadı.\nPlay tuşuna bas.",
         "error",
         true
       );
@@ -157,10 +151,10 @@
 
   function startPlayer() {
 
-    if (typeof Hls === "undefined") {
+    if (typeof mpegts === "undefined") {
 
       showStatus(
-        "HLS.js yüklenemedi.",
+        "mpegts.js yüklenemedi.",
         "error",
         true
       );
@@ -169,225 +163,94 @@
     }
 
 
-    if (!Hls.isSupported()) {
-
-      if (
-        video.canPlayType(
-          "application/vnd.apple.mpegurl"
-        )
-      ) {
-
-        video.src = streamUrl;
-
-        video.addEventListener(
-          "loadedmetadata",
-          playVideo,
-          { once: true }
-        );
-
-        return;
-      }
-
+    if (!mpegts.isSupported()) {
 
       showStatus(
-        "Bu ortam HLS desteklemiyor.",
+        "Bu tarayıcı MPEG-TS oynatmayı desteklemiyor.",
         "error",
         true
       );
 
       return;
     }
-
-
-    const hls = new Hls({
-      enableWorker: true,
-      lowLatencyMode: true,
-      backBufferLength: 30
-    });
-
-
-    window.hls = hls;
 
 
     showStatus(
-      "Yayın sunucusuna bağlanılıyor..."
+      "Canlı yayına bağlanılıyor..."
     );
 
 
-    hls.on(
-      Hls.Events.MEDIA_ATTACHED,
+    const player = mpegts.createPlayer(
+      {
+        type: "mpegts",
+
+        isLive: true,
+
+        url: streamUrl
+      },
+
+      {
+        enableWorker: true,
+
+        enableStashBuffer: false,
+
+        stashInitialSize: 128,
+
+        liveBufferLatencyChasing: true,
+
+        liveBufferLatencyMaxLatency: 3,
+
+        liveBufferLatencyMinRemain: 0.5
+      }
+    );
+
+
+    window.player = player;
+
+    player.attachMediaElement(video);
+
+    player.load();
+
+
+    player.on(
+      mpegts.Events.LOADING_COMPLETE,
       function () {
 
-        showStatus(
-          "Video hazır.\nYayın listesi isteniyor..."
-        );
-
-        hls.loadSource(
-          streamUrl
-        );
-
-      }
-    );
-
-
-    hls.on(
-      Hls.Events.MANIFEST_LOADING,
-      function () {
-
-        showStatus(
-          "Yayın listesi yükleniyor..."
-        );
-
-      }
-    );
-
-
-    hls.on(
-      Hls.Events.MANIFEST_LOADED,
-      function (event, data) {
-
         console.log(
-          "MANIFEST LOADED:",
-          data
+          "Yayın yükleme tamamlandı."
         );
 
       }
     );
 
 
-    hls.on(
-      Hls.Events.MANIFEST_PARSED,
-      function () {
-
-        showStatus(
-          "Yayın bulundu.\nVideo başlatılıyor...",
-          "success"
-        );
-
-        playVideo();
-
-      }
-    );
-
-
-    hls.on(
-      Hls.Events.FRAG_LOADING,
-      function (event, data) {
-
-        console.log(
-          "SEGMENT İSTENİYOR:",
-          data.frag?.url
-        );
-
-      }
-    );
-
-
-    hls.on(
-      Hls.Events.FRAG_LOADED,
-      function (event, data) {
-
-        console.log(
-          "SEGMENT GELDİ:",
-          data.frag?.url
-        );
-
-      }
-    );
-
-
-    hls.on(
-      Hls.Events.ERROR,
-      function (event, data) {
+    player.on(
+      mpegts.Events.ERROR,
+      function (type, detail, info) {
 
         console.error(
-          "HLS ERROR:",
-          data
+          "MPEGTS ERROR:",
+          type,
+          detail,
+          info
         );
 
 
-        let message =
-          "Yayın hatası\n\n";
-
-
-        if (data.details) {
-          message +=
-            "Detay: " +
-            data.details;
-        }
-
-
-        if (data.type) {
-          message +=
-            "\nTür: " +
-            data.type;
-        }
-
-
-        if (data.response?.code) {
-          message +=
-            "\nHTTP: " +
-            data.response.code;
-        }
-
-
-        if (data.response?.url) {
-          message +=
-            "\nURL: " +
-            data.response.url;
-        }
-
-
-        if (data.frag?.url) {
-          message +=
-            "\nSegment: " +
-            data.frag.url;
-        }
-
-
         showStatus(
-          message,
+          "Yayın hatası\n\n" +
+          "Tür: " +
+          type +
+          "\nDetay: " +
+          detail,
           "error",
           true
         );
 
-
-        if (!data.fatal) {
-          return;
-        }
-
-
-        if (
-          data.type ===
-          Hls.ErrorTypes.NETWORK_ERROR
-        ) {
-
-          setTimeout(() => {
-            hls.startLoad();
-          }, 2000);
-
-        }
-
-        else if (
-          data.type ===
-          Hls.ErrorTypes.MEDIA_ERROR
-        ) {
-
-          hls.recoverMediaError();
-
-        }
-
-        else {
-
-          hls.destroy();
-
-        }
-
       }
     );
 
 
-    hls.attachMedia(video);
+    playVideo();
 
   }
 
@@ -404,7 +267,19 @@
         true
       );
 
-      hideStatus(1200);
+      hideStatus();
+
+    }
+  );
+
+
+  video.addEventListener(
+    "waiting",
+    function () {
+
+      console.log(
+        "Buffer bekleniyor..."
+      );
 
     }
   );
@@ -417,7 +292,6 @@
       if (!video.error) {
         return;
       }
-
 
       showStatus(
         "Video hatası\n\n" +
