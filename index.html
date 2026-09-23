@@ -2,313 +2,64 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-  <title>Canlı Yayın</title>
-
-  <script src="mpegts.js"></script>
+  <title>Stream Test</title>
 
   <style>
-    html,
     body {
-      margin: 0;
-      width: 100%;
-      height: 100%;
-      background: #000;
-      overflow: hidden;
-      font-family: Arial, sans-serif;
-    }
-
-    #wrapper {
-      position: relative;
-      width: 100%;
-      height: 100%;
-      background: #000;
-    }
-
-    video {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      background: #000;
-    }
-
-    #status {
-      position: absolute;
-      top: 18px;
-      left: 18px;
-      z-index: 1000;
-
-      max-width: 600px;
-      padding: 12px 16px;
-
+      background: #111;
       color: white;
-      background: rgba(0, 0, 0, 0.85);
-
-      border-radius: 8px;
-
-      font-size: 15px;
-      line-height: 1.5;
-
+      font-family: Arial;
+      padding: 30px;
+      font-size: 20px;
       white-space: pre-wrap;
-
-      transition: opacity 0.25s ease;
-    }
-
-    #status.success {
-      background: rgba(0, 120, 40, 0.9);
-    }
-
-    #status.error {
-      background: rgba(170, 0, 0, 0.95);
-    }
-
-    #status.hidden {
-      opacity: 0;
-      pointer-events: none;
     }
   </style>
 </head>
 
 <body>
 
-<div id="wrapper">
-
-  <div id="status">
-    Yayın hazırlanıyor...
-  </div>
-
-  <video
-    id="video"
-    controls
-    autoplay
-    muted
-    playsinline
-  ></video>
-
-</div>
+<div id="out">Test başlıyor...</div>
 
 <script>
-  const video = document.getElementById("video");
-  const statusBox = document.getElementById("status");
+const out = document.getElementById("out");
 
-  const streamUrl =
-    "https://bein1.raykimofficial.workers.dev/224163";
+async function test() {
+  try {
+    out.textContent = "Worker yayınına bağlanılıyor...";
 
-  let yayinBasladi = false;
-  let hideTimer = null;
+    const response = await fetch("/bein/224163");
 
+    out.textContent =
+      "HTTP: " + response.status +
+      "\nContent-Type: " + response.headers.get("content-type") +
+      "\n\nStream okunuyor...";
 
-  function showStatus(message, type = "", force = false) {
-
-    if (
-      yayinBasladi &&
-      !force &&
-      type !== "error"
-    ) {
+    if (!response.body) {
+      out.textContent += "\n\nHATA: Response body yok.";
       return;
     }
 
-    clearTimeout(hideTimer);
+    const reader = response.body.getReader();
 
-    statusBox.textContent = message;
-    statusBox.className = type;
+    const { value, done } = await reader.read();
 
-    console.log(message);
+    out.textContent +=
+      "\n\nİLK VERİ GELDİ!" +
+      "\nByte miktarı: " + (value ? value.length : 0) +
+      "\nStream bitti mi: " + done;
+
+    reader.cancel();
+
+  } catch (err) {
+    out.textContent =
+      "HATA\n\n" +
+      err.name +
+      "\n" +
+      err.message;
   }
+}
 
-
-  function hideStatus(delay = 1500) {
-
-    clearTimeout(hideTimer);
-
-    hideTimer = setTimeout(() => {
-      statusBox.classList.add("hidden");
-    }, delay);
-  }
-
-
-  async function playVideo() {
-
-    try {
-
-      await video.play();
-
-    } catch (error) {
-
-      console.error(error);
-
-      showStatus(
-        "Yayın yüklendi fakat otomatik oynatma başlatılamadı.\nPlay tuşuna bas.",
-        "error",
-        true
-      );
-
-    }
-
-  }
-
-
-  function startPlayer() {
-
-    if (typeof mpegts === "undefined") {
-
-      showStatus(
-        "mpegts.js yüklenemedi.",
-        "error",
-        true
-      );
-
-      return;
-    }
-
-
-    if (!mpegts.isSupported()) {
-
-      showStatus(
-        "Bu tarayıcı MPEG-TS oynatmayı desteklemiyor.",
-        "error",
-        true
-      );
-
-      return;
-    }
-
-
-    showStatus(
-      "Canlı yayına bağlanılıyor..."
-    );
-
-
-    const player = mpegts.createPlayer(
-      {
-        type: "mpegts",
-
-        isLive: true,
-
-        url: streamUrl
-      },
-
-      {
-        enableWorker: true,
-
-        enableStashBuffer: false,
-
-        stashInitialSize: 128,
-
-        liveBufferLatencyChasing: true,
-
-        liveBufferLatencyMaxLatency: 3,
-
-        liveBufferLatencyMinRemain: 0.5
-      }
-    );
-
-
-    window.player = player;
-
-    player.attachMediaElement(video);
-
-    player.load();
-
-
-    player.on(
-      mpegts.Events.LOADING_COMPLETE,
-      function () {
-
-        console.log(
-          "Yayın yükleme tamamlandı."
-        );
-
-      }
-    );
-
-
-    player.on(
-      mpegts.Events.ERROR,
-      function (type, detail, info) {
-
-        console.error(
-          "MPEGTS ERROR:",
-          type,
-          detail,
-          info
-        );
-
-
-        showStatus(
-          "Yayın hatası\n\n" +
-          "Tür: " +
-          type +
-          "\nDetay: " +
-          detail,
-          "error",
-          true
-        );
-
-      }
-    );
-
-
-    playVideo();
-
-  }
-
-
-  video.addEventListener(
-    "playing",
-    function () {
-
-      yayinBasladi = true;
-
-      showStatus(
-        "Canlı yayın oynuyor.",
-        "success",
-        true
-      );
-
-      hideStatus();
-
-    }
-  );
-
-
-  video.addEventListener(
-    "waiting",
-    function () {
-
-      console.log(
-        "Buffer bekleniyor..."
-      );
-
-    }
-  );
-
-
-  video.addEventListener(
-    "error",
-    function () {
-
-      if (!video.error) {
-        return;
-      }
-
-      showStatus(
-        "Video hatası\n\n" +
-        "Kod: " +
-        video.error.code +
-        "\nMesaj: " +
-        video.error.message,
-        "error",
-        true
-      );
-
-    }
-  );
-
-
-  startPlayer();
-
+test();
 </script>
 
 </body>
